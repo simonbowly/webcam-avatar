@@ -2,19 +2,23 @@ import asyncio
 import logging
 import subprocess
 from dataclasses import dataclass
+from typing import Optional
+
+from .formats import RawImage
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class SingleFrameBuffer:
-    raw_image: bytes = b""
-    fresh: bool = False
+    frame: Optional[RawImage] = None
 
-    def update(self, data):
-        self.raw_image = data
-        self.fresh = True
+    def update(self, data: RawImage):
+        self.frame = data
         logger.debug("Frame buffer updated")
+
+    def get(self) -> Optional[RawImage]:
+        return self.frame
 
 
 async def stream_input_frames(buffer: SingleFrameBuffer):
@@ -46,7 +50,7 @@ async def stream_input_frames(buffer: SingleFrameBuffer):
 
     while True:
         raw_image = await loop.run_in_executor(None, read_frame)
-        buffer.update(raw_image)
+        buffer.update(RawImage(data=raw_image, width=width, height=height))
 
 
 async def stream_output_frames(buffer: SingleFrameBuffer):
@@ -65,11 +69,11 @@ async def stream_output_frames(buffer: SingleFrameBuffer):
         "-",
         "-f",
         "v4l2",
-        "/dev/video4",
+        "/dev/video2",
     ]
     process = subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
     assert process.stdin is not None
     while True:
         await asyncio.sleep(0.05)
-        if buffer.raw_image:
-            await loop.run_in_executor(None, process.stdin.write, buffer.raw_image)
+        if (frame := buffer.get()) is not None:
+            await loop.run_in_executor(None, process.stdin.write, frame.data)
