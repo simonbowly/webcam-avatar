@@ -1,11 +1,11 @@
-import subprocess
 import atexit
 import contextlib
+import subprocess
 import time
 
 import cv2
-import requests
 import numpy as np
+import requests
 
 
 def to_point_cloud(facemesh):

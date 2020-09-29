@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -e
+
+modules="webcam_avatar"
+
+echo "=========== flake8 ============="
+flake8 $modules --ignore=E501,W503 --exclude __init__.py
+echo "=========== mypy ============="
+mypy --ignore-missing-imports $modules tests
+pytest tests

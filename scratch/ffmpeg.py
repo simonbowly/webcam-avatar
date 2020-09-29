@@ -1,8 +1,7 @@
-import time
 import subprocess
+import time
 
 import requests
-
 
 frame_rate = 20
 width = 640
@@ -105,13 +104,13 @@ async def facemesh(image_buffer: SingleFrameBuffer, mesh_buffer):
 
 async def render():
     """ Something similar for mesh -> image, run only when fresh. """
-    # This should do the trick as a rawvideo or image2pipe 
-    assert len(np.zeros((640, 480, 3), dtype='int8').tobytes()) == 640 * 480 * 3
+    # This should do the trick as a rawvideo or image2pipe
+    assert len(np.zeros((640, 480, 3), dtype="int8").tobytes()) == 640 * 480 * 3
     pass
 
 
 async def stream_output_frames(render_buffer):
-    """ Create another ffmpeg process and write the frame (whether fresh or not)
+    """Create another ffmpeg process and write the frame (whether fresh or not)
     on a regular schedule. Could also run several of these to multiple virtual
     cameras so that all the intermediate results are available to switch between.
     """
@@ -128,6 +127,7 @@ async def main():
     # Create all coroutines.
     # Run all with gather or similar?
     pass
+
 
 # For command instruction help:
 # https://github.com/kkroening/ffmpeg-python

@@ -1,0 +1,6 @@
+#!/bin/bash
+
+modules="webcam_avatar"
+
+find $modules tests -name "*.py" | xargs isort
+black $modules tests
