@@ -34,17 +34,17 @@ async function serve() {
       // by sharp/image-pixels.
       body.push(chunk);
     }).on('end', async () => {
+      const stream = Buffer.concat(body); // TODO create on the fly in stream of push?
       var predictions;
       try {
         var hrstart = process.hrtime();
-        const stream = Buffer.concat(body);
-        const queryObject = urllib.parse(request.url,true).query;
-        console.log(queryObject);
-        const resizeWidth = parseInt(queryObject.resizeWidth);
-        // const data = await sharp(stream)
-        //   .resize({ width: resizeWidth })
-        //   .toBuffer();
-        const img = await pixels(stream, {shape: [640, 480]});
+        const queryParams = urllib.parse(request.url,true).query;
+        console.log(queryParams);
+        const resizeWidth = parseInt(queryParams.resizeWidth);
+        const data = await sharp(stream)
+          .resize({ width: resizeWidth })
+          .toBuffer();
+        const img = await pixels(data);
         predictions = await model.estimateFaces(img);
         hrend = process.hrtime(hrstart);
         console.info('Execution time: %ds %dms', hrend[0], hrend[1] / 1000000);

@@ -13,7 +13,6 @@
     "sharp": "^0.26.1"
   },
   "scripts": {
-    "stream": "cat input.jpg | node stream.js",
     "server": "node server.js"
   }
 }
