@@ -11,8 +11,10 @@ from webcam_avatar.ffmpeg_asyncio import (
 
 
 async def transform(input_buffer: SingleFrameBuffer, output_buffer: SingleFrameBuffer):
+    event = input_buffer.register()
     while True:
-        await asyncio.sleep(0.01)
+        await event.wait()
+        event.clear()
         if (raw_image := input_buffer.get()) is not None:
             png_image = formats.rgb_to_png(formats.raw_to_rgb(raw_image))
             facemesh_result = await facemesh(png_image)
@@ -28,7 +30,8 @@ async def main():
     await asyncio.gather(
         stream_input_frames(input_buffer),
         transform(input_buffer, output_buffer),
-        stream_output_frames(output_buffer),
+        stream_output_frames(input_buffer, "/dev/video2"),
+        stream_output_frames(output_buffer, "/dev/video3"),
     )
 
 

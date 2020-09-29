@@ -1,8 +1,8 @@
 import asyncio
 import logging
 import subprocess
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, List
 
 from .formats import RawImage
 
@@ -11,10 +11,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SingleFrameBuffer:
-    frame: Optional[RawImage] = None
+    events: List[asyncio.Event] = field(default_factory=list)
+    frame: Optional[RawImage] = field(default=None)
+
+    def register(self):
+        event = asyncio.Event()
+        self.events.append(event)
+        return event
 
     def update(self, data: RawImage):
         self.frame = data
+        for event in self.events:
+            event.set()
         logger.debug("Frame buffer updated")
 
     def get(self) -> Optional[RawImage]:
@@ -53,7 +61,7 @@ async def stream_input_frames(buffer: SingleFrameBuffer):
         buffer.update(RawImage(data=raw_image, width=width, height=height))
 
 
-async def stream_output_frames(buffer: SingleFrameBuffer):
+async def stream_output_frames(buffer: SingleFrameBuffer, path: str):
     loop = asyncio.get_event_loop()
     ffmpeg_command = [
         "ffmpeg",
@@ -69,11 +77,13 @@ async def stream_output_frames(buffer: SingleFrameBuffer):
         "-",
         "-f",
         "v4l2",
-        "/dev/video2",
+        path,
     ]
     process = subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
     assert process.stdin is not None
+    event = buffer.register()
     while True:
-        await asyncio.sleep(0.05)
+        await event.wait()
+        event.clear()
         if (frame := buffer.get()) is not None:
             await loop.run_in_executor(None, process.stdin.write, frame.data)
