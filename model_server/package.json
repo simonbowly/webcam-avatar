@@ -1,0 +1,19 @@
+{
+  "dependencies": {
+    "@tensorflow-models/facemesh": "^0.0.4",
+    "@tensorflow/tfjs": "^2.4.0",
+    "@tensorflow/tfjs-backend-cpu": "^2.4.0",
+    "@tensorflow/tfjs-backend-wasm": "^2.4.0",
+    "@tensorflow/tfjs-backend-webgl": "^2.4.0",
+    "@tensorflow/tfjs-converter": "^2.4.0",
+    "@tensorflow/tfjs-core": "^2.4.0",
+    "@tensorflow/tfjs-node": "^2.4.0",
+    "@tensorflow/tfjs-node-gpu": "^2.4.0",
+    "image-pixels": "^2.2.2",
+    "sharp": "^0.26.1"
+  },
+  "scripts": {
+    "stream": "cat input.jpg | node stream.js",
+    "server": "node server.js"
+  }
+}
