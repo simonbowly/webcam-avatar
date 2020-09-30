@@ -1,10 +1,12 @@
 import asyncio
 import logging
-import subprocess
 from dataclasses import dataclass, field
-from typing import Optional, List, Generic, TypeVar
+from typing import Generic, List, Optional, TypeVar
 
-from .formats import RawImage, PNGImage
+import ffmpeg
+import numpy as np
+
+from .formats import RawImage, RGBImage, raw_to_rgb, rgb_to_raw
 
 logger = logging.getLogger(__name__)
 
@@ -40,84 +42,98 @@ class SingleFrameBuffer(Generic[T]):
                 yield frame
 
 
-async def stream_input_frames(buffer: SingleFrameBuffer[RawImage]):
+async def stream_ffmpeg_input(
+    buffer: SingleFrameBuffer[RawImage],
+    source: str,
+    frame_rate=20,
+    width=800,
+    height=600,
+):
     loop = asyncio.get_event_loop()
-    frame_rate = 30
-    width = 640
-    height = 480
-    ffmpeg_command = [
-        "ffmpeg",
-        "-i",
-        "/dev/video0",
-        "-f",
-        "image2pipe",
-        "-s",
-        f"{width}x{height}",
-        "-r",
-        str(frame_rate),
-        "-pix_fmt",
-        "bgr24",
-        "-vcodec",
-        "rawvideo",
-        "-",
-    ]
-    process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, bufsize=10 ** 8)
+    process = (
+        ffmpeg.input(source, format="video4linux2", s=f"{width}x{height}", r=frame_rate)
+        .output("pipe:", format="rawvideo", pix_fmt="rgb24")
+        .run_async(pipe_stdout=True)
+    )
     assert process.stdout is not None
-
-    def read_frame():
-        return process.stdout.read(width * height * 3)
-
     while True:
-        raw_image = await loop.run_in_executor(None, read_frame)
+        raw_image = await loop.run_in_executor(
+            None, process.stdout.read, width * height * 3
+        )
         buffer.update(RawImage(data=raw_image, width=width, height=height))
+        logger.debug(f"Read frame {len(raw_image)=}")
 
 
-async def stream_output_frames_raw(buffer: SingleFrameBuffer[RawImage], path: str):
+async def stream_ffmpeg_output(
+    buffer: SingleFrameBuffer[RawImage],
+    sink: str,
+    frame_rate=20,
+    width=800,
+    height=600,
+):
     loop = asyncio.get_event_loop()
-    ffmpeg_command = [
-        "ffmpeg",
-        "-f",
-        "rawvideo",
-        "-pixel_format",
-        "bgr24",
-        "-video_size",
-        "640x480",
-        "-framerate",
-        "20",
-        "-i",
-        "-",
-        "-f",
-        "v4l2",
-        path,
-    ]
-    process = subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
+    process = (
+        ffmpeg.input(
+            "pipe:",
+            format="rawvideo",
+            pix_fmt="rgb24",
+            s="{}x{}".format(width, height),
+            r=frame_rate,
+        )
+        .output(sink, format="video4linux2", pix_fmt="yuv420p", r=frame_rate)
+        .run_async(pipe_stdin=True)
+    )
     assert process.stdin is not None
     async for frame in buffer.frames():
         await loop.run_in_executor(None, process.stdin.write, frame.data)
+        logger.debug(f"Wrote frame {len(frame.data)=}")
 
 
-async def stream_output_frames_png(buffer: SingleFrameBuffer[PNGImage], path: str):
-    loop = asyncio.get_event_loop()
-    ffmpeg_command = [
-        "ffmpeg",
-        "-f",
-        "image2pipe",
-        # "-framerate",  # Should this write to a fixed framerate?
-        # "30",
-        "-i",
-        "-",
-        "-vcodec",
-        "rawvideo",
-        "-vf",
-        "format=yuv420p",
-        "-r",
-        "10",
-        "-f",
-        "v4l2",
-        path,
-    ]
-    process = subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
-    assert process.stdin is not None
-    async for frame in buffer.frames():
-        # Perhaps this should write to a schedule?
-        await loop.run_in_executor(None, process.stdin.write, frame.data)
+def buffer_filter(func):
+    async def transform_(input_buffer, output_buffer):
+        async for input_frame in input_buffer.frames():
+            output_frame = func(input_frame)
+            if output_frame is not None:
+                output_buffer.update(output_frame)
+
+    return transform_
+
+
+def wash(channel):
+    @buffer_filter
+    def channel_filter(in_frame: RGBImage) -> RGBImage:
+        out_frame = np.zeros(in_frame.data.shape, dtype=np.uint8)
+        out_frame[:, :, channel] = in_frame.data[:, :, channel]
+        return RGBImage(out_frame)
+
+    return channel_filter
+
+
+if __name__ == "__main__":
+
+    async def main():
+        input_raw_buffer: SingleFrameBuffer[RawImage] = SingleFrameBuffer()
+        input_rgb_buffer: SingleFrameBuffer[RGBImage] = SingleFrameBuffer()
+        filters = [
+            stream_ffmpeg_input(input_raw_buffer, source="/dev/video2"),
+            buffer_filter(raw_to_rgb)(input_raw_buffer, input_rgb_buffer),
+        ]
+        for channel in [0, 1, 2]:
+            washed_rgb_buffer: SingleFrameBuffer[RGBImage] = SingleFrameBuffer()
+            washed_raw_buffer: SingleFrameBuffer[RawImage] = SingleFrameBuffer()
+            filters.extend(
+                [
+                    wash(channel)(input_rgb_buffer, washed_rgb_buffer),
+                    buffer_filter(rgb_to_raw)(washed_rgb_buffer, washed_raw_buffer),
+                    stream_ffmpeg_output(
+                        washed_raw_buffer, sink=f"/dev/video{channel+4}"
+                    ),
+                ]
+            )
+        await asyncio.gather(*filters)
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    asyncio.run(main())
