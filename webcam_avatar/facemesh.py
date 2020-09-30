@@ -19,7 +19,7 @@ class FaceMesh:
 
 
 async def facemesh(image: PNGImage) -> Optional[FaceMesh]:
-    width = 160
+    width = 320
     async with aiohttp.ClientSession() as session:
         async with session.post(
             f"http://localhost:8080?resizeWidth={width}", data=image.data
@@ -35,10 +35,9 @@ async def facemesh(image: PNGImage) -> Optional[FaceMesh]:
             return None
 
 
-def point_cloud(facemesh: FaceMesh) -> RGBImage:
-    width, height = 640, 480
+def point_cloud(facemesh: FaceMesh, width=640, height=480) -> RGBImage:
     mesh = np.array(facemesh.scaledMesh)
-    x = width - mesh[:, 0] * width // facemesh.image_width
+    x = mesh[:, 0] * width // facemesh.image_width
     x = x.round().astype("int").clip(min=0, max=width - 1)
     y = mesh[:, 1] * height // facemesh.image_height
     y = y.round().astype("int").clip(min=0, max=height - 1)
