@@ -102,7 +102,7 @@ async def stream_output_frames_png(buffer: SingleFrameBuffer[PNGImage], path: st
         "ffmpeg",
         "-f",
         "image2pipe",
-        # "-framerate",
+        # "-framerate",  # Should this write to a fixed framerate?
         # "30",
         "-i",
         "-",
@@ -119,4 +119,5 @@ async def stream_output_frames_png(buffer: SingleFrameBuffer[PNGImage], path: st
     process = subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
     assert process.stdin is not None
     async for frame in buffer.frames():
+        # Perhaps this should write to a schedule?
         await loop.run_in_executor(None, process.stdin.write, frame.data)

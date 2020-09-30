@@ -12,6 +12,10 @@ from webcam_avatar.ffmpeg_asyncio import (
 )
 
 
+# Breakdown performance metrics of encoders?
+# Need some way to trace the lag moving through the encoders.
+
+
 async def transform(
     input_buffer: SingleFrameBuffer[formats.RawImage],
     output_buffer: SingleFrameBuffer[formats.PNGImage],
@@ -21,6 +25,10 @@ async def transform(
         facemesh_result = await facemesh(png_image)
         if facemesh_result is not None:
             rgb_render = point_cloud(facemesh_result)
+            # Possibly need the conversions to be in a thread?
+            # The main purpose of the async code here is to avoid
+            # race conditions on the frames. All processing should
+            # be awaited to avoid interupting streams?
             output_buffer.update(formats.rgb_to_png(rgb_render))
 
 
@@ -38,7 +46,7 @@ async def main():
     await asyncio.gather(
         stream_input_frames(input_buffer),
         transform(input_buffer, output_buffer),
-        stream_output_frames_raw(input_buffer, "/dev/video2"),
+        # stream_output_frames_raw(input_buffer, "/dev/video2"),
         stream_output_frames_png(output_buffer, "/dev/video3"),
     )
 
