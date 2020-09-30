@@ -2,34 +2,45 @@ import asyncio
 import logging
 import subprocess
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Generic, TypeVar
 
-from .formats import RawImage
+from .formats import RawImage, PNGImage
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 
 @dataclass
-class SingleFrameBuffer:
+class SingleFrameBuffer(Generic[T]):
+
     events: List[asyncio.Event] = field(default_factory=list)
-    frame: Optional[RawImage] = field(default=None)
+    frame: Optional[T] = field(default=None)
 
     def register(self):
         event = asyncio.Event()
         self.events.append(event)
         return event
 
-    def update(self, data: RawImage):
+    def update(self, data: T):
         self.frame = data
         for event in self.events:
             event.set()
         logger.debug("Frame buffer updated")
 
-    def get(self) -> Optional[RawImage]:
+    def get(self) -> Optional[T]:
         return self.frame
 
+    async def frames(self):
+        event = self.register()
+        while True:
+            await event.wait()
+            event.clear()
+            if (frame := self.get()) is not None:
+                yield frame
 
-async def stream_input_frames(buffer: SingleFrameBuffer):
+
+async def stream_input_frames(buffer: SingleFrameBuffer[RawImage]):
     loop = asyncio.get_event_loop()
     frame_rate = 30
     width = 640
@@ -61,7 +72,7 @@ async def stream_input_frames(buffer: SingleFrameBuffer):
         buffer.update(RawImage(data=raw_image, width=width, height=height))
 
 
-async def stream_output_frames(buffer: SingleFrameBuffer, path: str):
+async def stream_output_frames_raw(buffer: SingleFrameBuffer[RawImage], path: str):
     loop = asyncio.get_event_loop()
     ffmpeg_command = [
         "ffmpeg",
@@ -81,9 +92,31 @@ async def stream_output_frames(buffer: SingleFrameBuffer, path: str):
     ]
     process = subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
     assert process.stdin is not None
-    event = buffer.register()
-    while True:
-        await event.wait()
-        event.clear()
-        if (frame := buffer.get()) is not None:
-            await loop.run_in_executor(None, process.stdin.write, frame.data)
+    async for frame in buffer.frames():
+        await loop.run_in_executor(None, process.stdin.write, frame.data)
+
+
+async def stream_output_frames_png(buffer: SingleFrameBuffer[PNGImage], path: str):
+    loop = asyncio.get_event_loop()
+    ffmpeg_command = [
+        "ffmpeg",
+        "-f",
+        "image2pipe",
+        "-framerate",
+        "30",
+        "-i",
+        "-",
+        "-vcodec",
+        "rawvideo",
+        "-vf",
+        "format=yuv420p",
+        "-r",
+        "10",
+        "-f",
+        "v4l2",
+        path,
+    ]
+    process = subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
+    assert process.stdin is not None
+    async for frame in buffer.frames():
+        await loop.run_in_executor(None, process.stdin.write, frame.data)
