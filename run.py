@@ -3,7 +3,7 @@ import logging
 
 from webcam_avatar import formats
 
-# from webcam_avatar.facemesh import facemesh, point_cloud
+from webcam_avatar.facemesh import facemesh, point_cloud
 from webcam_avatar.ffmpeg_asyncio import (
     SingleFrameBuffer,
     stream_input_frames,
@@ -12,26 +12,24 @@ from webcam_avatar.ffmpeg_asyncio import (
 )
 
 
-# async def transform(input_buffer: SingleFrameBuffer, output_buffer: SingleFrameBuffer):
-#     event = input_buffer.register()
-#     while True:
-#         await event.wait()
-#         event.clear()
-#         if (raw_image := input_buffer.get()) is not None:
-#             png_image = formats.rgb_to_png(formats.raw_to_rgb(raw_image))
-#             facemesh_result = await facemesh(png_image)
-#             if facemesh_result is not None:
-#                 rgb_render = point_cloud(facemesh_result)
-#                 new_raw_image = formats.rgb_to_raw(rgb_render)
-#                 output_buffer.update(new_raw_image)
-
-
 async def transform(
     input_buffer: SingleFrameBuffer[formats.RawImage],
     output_buffer: SingleFrameBuffer[formats.PNGImage],
 ):
     async for frame in input_buffer.frames():
-        output_buffer.update(formats.rgb_to_png(formats.raw_to_rgb(frame)))
+        png_image = formats.rgb_to_png(formats.raw_to_rgb(frame))
+        facemesh_result = await facemesh(png_image)
+        if facemesh_result is not None:
+            rgb_render = point_cloud(facemesh_result)
+            output_buffer.update(formats.rgb_to_png(rgb_render))
+
+
+# async def transform(
+#     input_buffer: SingleFrameBuffer[formats.RawImage],
+#     output_buffer: SingleFrameBuffer[formats.PNGImage],
+# ):
+#     async for frame in input_buffer.frames():
+#         output_buffer.update(formats.rgb_to_png(formats.raw_to_rgb(frame)))
 
 
 async def main():
